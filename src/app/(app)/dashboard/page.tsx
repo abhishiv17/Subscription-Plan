@@ -4,6 +4,7 @@ import { Flash, type SearchParams } from "@/components/flash";
 import { Button, Card, Input, LinkButton, Stat, Table, statusDot, tdCls } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtMoney, titleCase } from "@/lib/format";
+import { dateParam } from "@/lib/invoices";
 
 type Summary = {
   from: string;
@@ -19,13 +20,19 @@ type Summary = {
   revenue_by_month: { month: string; amount: number }[];
 };
 
+type BillingSchedule = { scheduled: boolean; schedule?: string; runs?: { start_time: string; status: string; return_message: string }[] };
+
+/** pg_cron reports "1 row"; the billing summary itself lives in _run_billing's result, which cron does not keep. */
+const describeRun = (message: string) => (message === "1 row" ? "completed" : message);
+
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const from = typeof sp.from === "string" && sp.from ? sp.from : undefined;
-  const to = typeof sp.to === "string" && sp.to ? sp.to : undefined;
+  const from = dateParam(sp.from) || undefined;
+  const to = dateParam(sp.to) || undefined;
 
   const supabase = await createClient();
-  const [{ data, error }, { data: overdue }] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data, error }, { data: overdue }, { data: schedule }, { count: expiredQuotes }] = await Promise.all([
     supabase.rpc("dashboard_summary", { p_from: from ?? null, p_to: to ?? null }),
     supabase
       .from("invoice_overview")
@@ -33,7 +40,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       .eq("is_overdue", true)
       .order("due_date")
       .limit(8),
+    supabase.rpc("billing_schedule_status"),
+    supabase.from("subscriptions").select("id", { count: "exact", head: true }).eq("status", "quotation").lt("quotation_valid_until", today),
   ]);
+  const billing = schedule as BillingSchedule | null;
+  const lastRun = billing?.runs?.[0];
   if (error) throw error;
   const s = data as Summary;
   const maxMonth = Math.max(1, ...s.revenue_by_month.map((m) => Number(m.amount)));
@@ -74,6 +85,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       </div>
 
       <Flash searchParams={searchParams} />
+
+      <p className="mb-4 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+        <span className={`h-1.5 w-1.5 rounded-full ${billing?.scheduled ? (lastRun && lastRun.status !== "succeeded" ? "bg-red-500" : "bg-emerald-500") : "bg-slate-300"}`} aria-hidden />
+        {billing?.scheduled ? "Automatic billing runs daily at 06:00 IST" : "Automatic billing is not scheduled"}
+        {lastRun && (
+          <span className={lastRun.status === "succeeded" ? "" : "font-medium text-red-600"}>
+            · last run {new Date(lastRun.start_time).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}: {lastRun.status === "succeeded" ? describeRun(lastRun.return_message) : lastRun.return_message}
+          </span>
+        )}
+        {!!expiredQuotes && (
+          <Link className="font-medium text-amber-700 hover:underline" href="/subscriptions?status=expired_quotation">
+            · {`${expiredQuotes} expired quotation${expiredQuotes === 1 ? "" : "s"} to follow up`}
+          </Link>
+        )}
+      </p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Monthly recurring revenue" value={fmtMoney(s.mrr)} hint="From active subscriptions" />

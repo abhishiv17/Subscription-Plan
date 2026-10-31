@@ -8,21 +8,25 @@ import { fmtDate, fmtMoney, titleCase } from "@/lib/format";
 
 const PAGE_SIZE = 25;
 const STATUSES = SUBSCRIPTION_STATUSES;
+const EXPIRED = "expired_quotation";
 
 export default async function SubscriptionsPage({ searchParams }: { searchParams: SearchParams }) {
   await requireRole("admin", "staff");
   const sp = await searchParams;
   const clean = (v: unknown) => typeof v === "string" ? v.replace(/[^\p{L}\p{N}@._+ -]/gu, "").trim().slice(0,100) : "";
   const q = clean(sp.q), customerSearch = clean(sp.customerSearch);
-  const status = typeof sp.status === "string" && STATUSES.includes(sp.status as typeof STATUSES[number]) ? sp.status : "";
+  // "expired_quotation" is a view over status = quotation whose valid-until date has passed.
+  const status = typeof sp.status === "string" && (STATUSES.includes(sp.status as typeof STATUSES[number]) || sp.status === EXPIRED) ? sp.status : "";
+  const today = new Date().toISOString().slice(0, 10);
   const customer = typeof sp.customer === "string" && UUID_RE.test(sp.customer) ? sp.customer : "";
   const plan = typeof sp.plan === "string" && UUID_RE.test(sp.plan) ? sp.plan : "";
   const page = Math.max(1, Math.min(100000, Math.floor(Number(sp.page) || 1)));
   const supabase = await createClient();
   let query = supabase.from("subscription_overview")
-    .select("id, number, customer_name, plan_name, billing_period, status, start_date, expiry_date, next_invoice_date, recurring_amount", { count: "exact" })
+    .select("id, number, customer_name, plan_name, billing_period, status, start_date, expiry_date, next_invoice_date, recurring_amount, quotation_valid_until", { count: "exact" })
     .order("created_at", { ascending: false }).order("id").range((page-1)*PAGE_SIZE, page*PAGE_SIZE-1);
-  if (status) query = query.eq("status", status);
+  if (status === EXPIRED) query = query.eq("status", "quotation").lt("quotation_valid_until", today);
+  else if (status) query = query.eq("status", status);
   if (customer) query = query.eq("customer_id", customer);
   if (plan) query = query.eq("plan_id", plan);
   if (q) query = query.or(`number.ilike.%${q}%,customer_name.ilike.%${q}%`);
@@ -49,7 +53,7 @@ export default async function SubscriptionsPage({ searchParams }: { searchParams
       <Flash searchParams={searchParams} />
       <form className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="text-sm">Subscription or customer<Input name="q" placeholder="Number or customer name" defaultValue={q} /></label>
-        <label className="text-sm">Status<Select name="status" defaultValue={status}><option value="">All statuses</option>{STATUSES.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}</Select></label>
+        <label className="text-sm">Status<Select name="status" defaultValue={status}><option value="">All statuses</option>{STATUSES.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}<option value={EXPIRED}>Expired quotations</option></Select></label>
         <label className="text-sm">Plan<Select name="plan" defaultValue={plan}><option value="">All plans</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></label>
         <label className="text-sm">Find customer<Input name="customerSearch" defaultValue={customerSearch} placeholder="Name or email; apply to find matches" /></label>
         <label className="text-sm">Customer<Select name="customer" defaultValue={customer}><option value="">All customers</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.email})</option>)}</Select></label>
@@ -61,7 +65,7 @@ export default async function SubscriptionsPage({ searchParams }: { searchParams
             <td className={tdCls}><Link className="font-medium text-brand hover:underline" href={`/subscriptions/${s.id}`}>{s.number}</Link></td>
             <td className={tdCls}>{s.customer_name}</td>
             <td className={tdCls}>{s.plan_name} <span className="text-xs text-slate-400">· {s.billing_period}</span></td>
-            <td className={tdCls}><StatusBadge status={s.status} /></td>
+            <td className={tdCls}><StatusBadge status={s.status === "quotation" && s.quotation_valid_until && s.quotation_valid_until < today ? "expired" : s.status} /></td>
             <td className={tdCls}>{fmtDate(s.start_date)}</td>
             <td className={tdCls}>{fmtDate(s.expiry_date)}</td>
             <td className={tdCls}>{s.status === "active" ? fmtDate(s.next_invoice_date) : "—"}</td>

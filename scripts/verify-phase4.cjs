@@ -89,6 +89,8 @@ const findForm=(page,label)=>forms(page.html).find(f=>f.includes('>'+label+'<'))
  assert.equal((await admin.get('/quotations/not-a-uuid')).status,404);
  check(await service.from('subscriptions').update({quotation_valid_until:'2020-01-01'}).eq('id',id));
  page=await admin.get(path);assert.ok(!findForm(page,'Confirm'));assert.ok(page.html.includes('quotation has expired'));
+ const expiredList=await admin.get('/subscriptions?status=expired_quotation&customer='+customer.id);assert.ok(expiredList.html.includes((await row('subscriptions',id)).number),'Expired quotation filter');assert.ok(expiredList.html.includes('>Expired<'),'Expired badge');
+ assert.ok((await admin.get('/dashboard')).html.includes('/subscriptions?status=expired_quotation'),'Dashboard links expired quotations');
  url=await admin.post(path,issuedConfirm,{});assert.ok(url.includes('err='));
  url=await admin.post(path,findForm(page,'Back to draft'),{});assert.ok(url.includes('ok='));assert.equal((await row('subscriptions',id)).quotation_valid_until,null);
  page=await admin.get(path);url=await admin.post(path,findForm(page,'Send quotation'),{});assert.ok(url.includes('ok='));assert.ok((await row('subscriptions',id)).quotation_valid_until>'2020-01-01');

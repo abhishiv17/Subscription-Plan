@@ -84,6 +84,7 @@ const badgeColors: Record<string, [string, string]> = {
   paid: ["bg-emerald-50 text-emerald-800 ring-emerald-200", "bg-emerald-500"],
   cancelled: ["bg-white text-slate-500 ring-slate-200 line-through decoration-slate-300", "bg-slate-300"],
   overdue: ["bg-red-50 text-red-700 ring-red-200", "bg-red-500"],
+  expired: ["bg-amber-50 text-amber-800 ring-amber-200", "bg-amber-500"],
   admin: ["bg-brand-light text-brand-dark ring-brand/20", "bg-brand"],
   staff: ["bg-sky-50 text-sky-800 ring-sky-200", "bg-sky-500"],
   customer: ["bg-slate-100 text-slate-700 ring-slate-200", "bg-slate-400"],
