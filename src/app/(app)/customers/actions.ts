@@ -20,6 +20,6 @@ export async function saveCustomer(id: string | null, form: FormData) {
     ? await supabase.from("customers").update(values).eq("id", id).select("id").single()
     : await supabase.from("customers").insert(values).select("id").single();
   if (error) flash(back, "err", error.code === "23505" ? "A customer with this email already exists." : error.message);
-  revalidatePath("/customers");
+  revalidatePath("/customers", "layout");
   redirect(`/customers/${data.id}?ok=${encodeURIComponent("Customer saved.")}`);
 }

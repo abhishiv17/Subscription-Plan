@@ -28,7 +28,7 @@ App code lives in `src/`; the database migrations live in `supabase/migrations/`
 
 **To do:** see the phases below. Each phase should end with something you can click through.
 
-> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `web/src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). They are left unticked until each has been clicked through end to end. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
+> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–2 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
 
 ---
 
@@ -52,8 +52,8 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - [x] Staff see the catalogue read-only (RLS already enforces this; hide the edit buttons too)
 
 ## Phase 2 — People
-- [ ] `/customers`: list with search, create and edit, and a detail page with their subscriptions, invoices and balance
-- [ ] `/users` (admin): list profiles and change roles through a server action that uses `lib/supabase/admin.ts`; invite staff by email with `auth.admin.inviteUserByEmail` and `app_metadata.role`
+- [x] `/customers`: list with search, create and edit, and a detail page with their subscriptions, invoices and balance
+- [x] `/users` (admin): list profiles and change roles through a server action that uses `lib/supabase/admin.ts`; invite staff by email with `auth.admin.inviteUserByEmail` and `app_metadata.role`
 
 ## Phase 3 — Quotation templates
 - [ ] `/templates`: list and form (plan, validity days, payment terms) with editable lines (product, variant, quantity, optional price override, tax)
@@ -126,3 +126,31 @@ explicitly; Phase 2 role management must not rely on Auth metadata alone.
 
 Repeat with a running server on port 3001 and `DEMO_TEST_PASSWORD` set in your
 environment: `node scripts/verify-phase1.cjs`. No credentials are stored in the script.
+
+## Phase 2 verification (2026-10-31)
+
+Migration `0004_people_management.sql` applied by the owner. Customers support
+search, create/edit, and paginated subscription/invoice history. `customer_balance`
+aggregates all confirmed unpaid invoices under the caller's RLS permissions;
+a 23-invoice fixture verified that balances do not depend on the visible page.
+
+Admins can search/filter/paginate all profiles, change another account's role,
+and invite staff/admins by email. `set_account_role` is service-role-only and
+atomically updates profile roles and Auth `app_metadata.role`, preserves billing
+contacts, and rejects self-demotion. Invites use `inviteUserByEmail`; the acceptance
+page supports default session fragments, PKCE codes, and custom token-hash links,
+then opens password setup. Duplicate/invalid invitations never send email.
+
+Checks: production build, TypeScript, and ESLint pass with no errors or warnings;
+`scripts/test-people.cjs` has nine passing invitation/action tests; the live
+`scripts/verify-phase2.cjs` suite passed customer mutations, full balances,
+role/metadata synchronization, self-demotion protection, authorization and RLS,
+real generated invitation tokens, and access to password setup. Temporary staff
+permissions used the owner's explicit test approval; generated fixtures were removed.
+Browser review confirmed the users screen, account controls and invitation UI.
+
+Email delivery itself was not exercised: action tests mock the mail call and real
+invitation tokens use `generateLink` without sending email. Phase 0's manual redirect
+URL/SMTP configuration remains open. Allow `/accept-invite` for the app origin in
+Supabase Auth URLs (the localhost `/**` rule also covers it). No additional SQL is
+needed beyond the already applied 0004.

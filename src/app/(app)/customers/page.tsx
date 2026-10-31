@@ -7,14 +7,14 @@ const PAGE_SIZE = 25;
 
 export default async function CustomersPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const q = typeof sp.q === "string" ? sp.q.replace(/[,()%*]/g, "").trim() : "";
-  const page = Math.max(1, Number(sp.page) || 1);
+  const q = typeof sp.q === "string" ? sp.q.replace(/[^\p{L}\p{N}@._+ -]/gu, "").trim().slice(0,100) : "";
+  const page = Math.max(1, Math.min(100000, Math.floor(Number(sp.page) || 1)));
 
   const supabase = await createClient();
   let query = supabase
     .from("customers")
     .select("id, name, email, company, phone, user_id", { count: "exact" })
-    .order("name")
+    .order("name").order("id")
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
   if (q) query = query.or(`name.ilike.%${q}%,email.ilike.%${q}%,company.ilike.%${q}%`);
   const { data, count, error } = await query;

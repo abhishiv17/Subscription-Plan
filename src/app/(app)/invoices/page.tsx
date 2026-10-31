@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Flash, type SearchParams } from "@/components/flash";
-import { Button, Input, PageHeader, Pagination, Select, StatusBadge, Table, tdCls } from "@/components/ui";
+import { Button, Input, PageHeader, Pagination, StatusBadge, Table, tdCls } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtMoney } from "@/lib/format";
 
