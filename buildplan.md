@@ -154,3 +154,12 @@ invitation tokens use `generateLink` without sending email. Phase 0's manual red
 URL/SMTP configuration remains open. Allow `/accept-invite` for the app origin in
 Supabase Auth URLs (the localhost `/**` rule also covers it). No additional SQL is
 needed beyond the already applied 0004.
+
+## Phase 1 and Phase 2 recheck (2026-10-31)
+
+Pulled `main` (already current at `c24382e`), rebuilt the production app, and reran
+both live integration suites in full. All catalogue and people checks passed again,
+including staff write denial, discount rollback, customer balances across pages,
+real invitation tokens (without email delivery), and role/metadata synchronization.
+All nine focused invitation/action tests passed. Temporary fixtures were removed.
+Phase 3 implementation started only after both suites passed.
