@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Brightloop: plum ink on a lilac-grey desk, with marigold for the billing loop. */
+@theme inline {
+  --color-brand: #6e2f63;
+  --color-brand-dark: #561f4c;
+  --color-brand-light: #f5ecf3;
+  --color-brand-deep: #2a1328;
+  --color-loop: #e8a33d;
+  --color-ground: #eceaee;
+
+  /* Neutrals carry a faint plum tint so every page reads as one palette. */
+  --color-slate-50: #f8f7f9;
+  --color-slate-100: #f1eff2;
+  --color-slate-200: #e3dfe5;
+  --color-slate-300: #ccc6cf;
+  --color-slate-400: #9c94a0;
+  --color-slate-500: #736a77;
+  --color-slate-600: #574f5b;
+  --color-slate-700: #433c46;
+  --color-slate-800: #2e2831;
+  --color-slate-900: #221a24;
+  --color-slate-950: #150f17;
+
+  --font-sans: var(--font-schibsted);
+}
+
+/* In the base layer so utilities like outline-none on inputs still win. */
+@layer base {
+  body {
+    background: var(--color-ground);
+    color: var(--color-slate-900);
+  }
+
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-brand-light);
+    color: var(--color-brand-dark);
+  }
+}
+
+/* The marigold arc on the sign-in panel draws itself once. */
+@keyframes loop-draw {
+  from {
+    stroke-dashoffset: var(--loop-length);
+  }
+}
+
+.loop-draw {
+  stroke-dasharray: var(--loop-length) 1000;
+  animation: loop-draw 1.6s cubic-bezier(0.65, 0, 0.35, 1) 0.2s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loop-draw {
+    animation: none;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .print-flat {
+    border: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+}
