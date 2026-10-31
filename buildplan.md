@@ -35,7 +35,9 @@ App code lives in `web/`; the database is defined in `web/supabase/migrations/00
 ## Phase 0 — Environment
 - [x] Create the Supabase project (`csvucvhfuwdagjhlqktw`) and apply `0001_init.sql`; also applied `0002_lock_down_functions.sql` (revokes RPC access from `anon`, hides trigger functions)
 - [x] Add `web/.env.example` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-- [ ] Set the Auth redirect URLs (`/auth/callback`, `/reset-password`) for localhost and production
+- [ ] Supabase → Authentication → URL Configuration: Site URL `http://localhost:3000`, and add `http://localhost:3000/**` to Redirect URLs. **This has to be done by hand in the dashboard.** The only email link that uses it is password reset (`/auth/callback?next=/reset-password`); signup auto-confirms accounts.
+- [x] Harden `/auth/callback` so `next` only accepts same-site paths (prevents an open redirect)
+- [ ] Optional: custom SMTP (e.g. Resend). Supabase's built-in mailer is heavily rate-limited and may only deliver to project team addresses, so testers' password-reset emails can fail without it.
 - [x] Bootstrap the first admin: owner account signed up and promoted to `admin`, and its auto-created customer row removed (2026-10-31)
 - [x] Shared test admin `demo.admin@example.com`, created with the service-role key and email pre-confirmed. **Delete it or rotate its password before production.**
 - [x] `supabase/seed.sql`: taxes, 5 products with variants, plans, 2 templates, 2 discounts, 2,000 customers, 3,000 subscriptions, ~7,000 invoices (loaded and checked in the database)
@@ -92,7 +94,7 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - [ ] Playwright smoke test: sign up → admin creates a subscription → activate → run billing → customer pays
 - [ ] `npm run lint` and `npm run build` with no errors; add a CI workflow
 - [ ] Performance check: seed about 5k subscriptions and 20k invoices, and keep list pages under 2s (indexes exist; paginate everything)
-- [ ] Deploy to Vercel with env vars and production Auth URLs (needed before friends can use the shared test admin)
+- [ ] Deploy to Vercel with env vars (needed before friends can use the shared test admin). Set `NEXT_PUBLIC_SITE_URL` to the production URL, since reset links are built from it before the request origin. In Supabase, change the Site URL to production and add `https://<prod-domain>/**` (and `https://*-<team>.vercel.app/**` for preview deploys) to Redirect URLs
 - [ ] Before launch: remove `demo.admin@example.com`, or downgrade it to staff
 
 ---
@@ -105,9 +107,6 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - Commits: `feat(scope): …`, `fix(scope): …`, `chore: …`, `docs: …`
 
 ---
-
-## Log
-- **2026-10-31**: Migrations 0001–0002 applied and seed loaded. Owner promoted to admin. Shared test admin `demo.admin@example.com` created (the password was given in chat and is not stored here).
 
 ## Phase 1 implementation update (2026-10-31)
 
@@ -122,3 +121,10 @@ existing unused import warning in invoices. Live end-to-end verification remains
 pending: the browser could not reach the verification server on port 3001, and the
 Supabase sign-in request failed from this environment. Checkboxes above remain
 unticked until those flows have been verified against the migrated database.
+
+---
+
+## Log
+- **2026-10-31**: Migrations 0001–0002 applied and seed loaded. Owner promoted to admin. Shared test admin `demo.admin@example.com` created (the password was given in chat and is not stored here).
+- **2026-10-31**: `/auth/callback` `next` param restricted to same-site paths. Redirect-URL settings documented; waiting on the manual dashboard change. Production URL steps moved to Phase 8.
+- **2026-10-31** (Afreen): Phase 1 catalogue editing and staff read-only access (`b0bbc94`); migration `0003_catalog_discount.sql` added but **not yet applied** to Supabase. Public homepage with session-aware login nav (`b3f35a3`).
