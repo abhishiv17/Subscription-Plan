@@ -1,7 +1,7 @@
 # Build Plan — Subscription Management System
 
 Next.js 15 (App Router, server actions) + Supabase (Postgres, Auth, RLS) + Tailwind v4.
-App code lives in `web/`; the database is defined in `web/supabase/migrations/0001_init.sql`.
+App code lives in `src/`; the database migrations live in `supabase/migrations/`.
 
 ## Roles
 
@@ -45,11 +45,11 @@ App code lives in `web/`; the database is defined in `web/supabase/migrations/00
 
 ## Phase 1 — Catalogue (admin)
 Pattern for each module: list page → new/edit form → server action → `revalidatePath` → flash.
-- [ ] `/taxes`: list, create, edit, toggle active
-- [ ] `/products`: list (filter by type and active), form with tax picker, inline **variants** editor (attribute, value, extra price)
-- [ ] `/plans`: list and form (price, billing period, min quantity, dates, and the closable, pausable, renewable and auto-close flags)
-- [ ] `/discounts`: list and form (fixed or percent, subscription or product scope, product picker for product scope, limits, dates); show `used_count`
-- [ ] Staff see the catalogue read-only (RLS already enforces this; hide the edit buttons too)
+- [x] `/taxes`: list, create, edit, toggle active
+- [x] `/products`: list (filter by type and active), form with tax picker, inline **variants** editor (attribute, value, extra price)
+- [x] `/plans`: list and form (price, billing period, min quantity, dates, and the closable, pausable, renewable and auto-close flags)
+- [x] `/discounts`: list and form (fixed or percent, subscription or product scope, product picker for product scope, limits, dates); show `used_count`
+- [x] Staff see the catalogue read-only (RLS already enforces this; hide the edit buttons too)
 
 ## Phase 2 — People
 - [ ] `/customers`: list with search, create and edit, and a detail page with their subscriptions, invoices and balance
@@ -108,23 +108,21 @@ Pattern for each module: list page → new/edit form → server action → `reva
 
 ---
 
-## Phase 1 implementation update (2026-10-31)
+## Phase 1 verification (2026-10-31)
 
-Catalogue implementation now includes tax editing, product type/status filters,
-inline variant editing, discount editing, and staff read-only access to all four
-catalogue modules. Apply `supabase/migrations/0003_catalog_discount.sql` before
-using discount saves; this makes rule and product-link changes atomic and preserves
-`used_count`. No reseed is required.
+Migration `0003_catalog_discount.sql` applied by the owner. All Phase 1 forms
+verified against the local production server and live demo database using
+`scripts/verify-phase1.cjs`: tax create/edit/toggle; product create/edit, type/status
+filters and inactive tax preservation; variant add/edit/remove; plan create/edit,
+flags and date validation; discount create/edit, scope changes, invalid percentage,
+atomic rollback on an invalid product, and preserved `used_count`.
 
-Validation: production build and TypeScript passed; ESLint has zero errors and one
-existing unused import warning in invoices. Live end-to-end verification remains
-pending: the browser could not reach the verification server on port 3001, and the
-Supabase sign-in request failed from this environment. Checkboxes above remain
-unticked until those flows have been verified against the migrated database.
+Temporary staff verification (explicitly approved by the owner) passed: every
+catalogue module was readable, edit controls were hidden, a forged server action
+was denied, and direct table/RPC writes were rejected by RLS/admin checks. Test
+fixtures and the temporary staff account were removed afterward. The live signup
+trigger defaults new accounts to customer, so tests assign the staff profile
+explicitly; Phase 2 role management must not rely on Auth metadata alone.
 
----
-
-## Log
-- **2026-10-31**: Migrations 0001–0002 applied and seed loaded. Owner promoted to admin. Shared test admin `demo.admin@example.com` created (the password was given in chat and is not stored here).
-- **2026-10-31**: `/auth/callback` `next` param restricted to same-site paths. Redirect-URL settings documented; waiting on the manual dashboard change. Production URL steps moved to Phase 8.
-- **2026-10-31** (Afreen): Phase 1 catalogue editing and staff read-only access (`b0bbc94`); migration `0003_catalog_discount.sql` added but **not yet applied** to Supabase. Public homepage with session-aware login nav (`b3f35a3`).
+Repeat with a running server on port 3001 and `DEMO_TEST_PASSWORD` set in your
+environment: `node scripts/verify-phase1.cjs`. No credentials are stored in the script.
