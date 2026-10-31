@@ -1,8 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getProfile, homeFor } from "@/lib/auth";
 import { signIn } from "../actions";
 import { AuthForm } from "@/components/auth-form";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const profile = await getProfile();
+  if (profile) redirect(homeFor(profile.role));
   return (
     <>
       <h2 className="mb-4 text-lg font-semibold">Sign in</h2>
