@@ -28,7 +28,7 @@ App code lives in `src/`; the database migrations live in `supabase/migrations/`
 
 **To do:** see the phases below. Each phase should end with something you can click through.
 
-> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–4 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
+> **Code vs. verified (2026-10-31):** Phases 1–7 are implemented and verified. Phase 8 testing is done: SQL, Playwright and performance checks pass, and the CI workflow is written but hasn't run on GitHub yet. Left: finishing the Vercel deploy (see its section below; the Phase 5–8 work isn't pushed yet), the first real cron run on 2026-11-01, and the pause decision in Phase 6.
 
 ---
 
@@ -72,30 +72,52 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - [x] Quotation view the customer can print, showing the valid-until date
 
 ## Phase 5 — Invoices & payments
-- [ ] `/invoices`: list from `invoice_overview` with an overdue badge and filters for status, customer, date range and overdue
-- [ ] Detail page: lines, discounts (`invoice_discounts`), totals, payments, and Confirm, Cancel and "Record payment" actions
-- [ ] Printable invoice page (`/invoices/[id]/print`, print CSS)
-- [ ] "Mark sent": set `sent_at`; email delivery is optional (Supabase Edge Function + Resend)
-- [ ] `/payments`: list of all payments filtered by method and date
-- [ ] Decide whether billing-generated invoices should start as `confirmed` (they are `draft` today, and customers can't pay drafts)
+- [x] `/invoices`: list from `invoice_overview` with an overdue badge and filters for status, customer, date range and overdue
+- [x] Detail page: lines, discounts (`invoice_discount_details`), totals, payments, and Confirm, Cancel and "Record payment" actions
+- [x] Printable invoice page (`/invoices/[id]/print`, print CSS), shared by staff and customers
+- [x] "Mark sent": set `sent_at`; email via Resend when `RESEND_API_KEY` is set
+- [x] `/payments`: list of all payments filtered by method and date
+- [x] Decision (owner, 2026-10-31): billing-generated invoices are issued as `confirmed` (`_issue_subscription_invoice`, migration 0007). Verified in the database: a billing run created a confirmed invoice
+- [x] Database integrity (0007): no manual invoice inserts, amounts/parties/periods read-only for app users, invoice lines read-only, payments insert-only (admins may delete), cancelling returns discount uses. Verified in a rolled-back admin-role transaction
+- [x] `run_billing` refuses future dates (0009)
+- [x] Admin "remove payment" correction on the invoice page
 
 ## Phase 6 — Customer portal
-- [ ] `/portal`: their subscriptions with status, plan, next invoice and expiry, plus Pause, Resume, Close and Renew controls shown according to the plan flags
-- [ ] `/portal/subscriptions/[id]`: lines and history
-- [ ] `/portal/invoices`: list and detail, with "Pay now" (`portal_pay_invoice`) and a printable invoice
-- [ ] Profile page (name, phone, company) that edits their own `customers` row
+- [x] `/portal`: their subscriptions with status, plan, next invoice and expiry, plus Pause, Resume, Close and Renew controls shown according to the plan flags (drafts hidden; amount-to-pay summary)
+- [x] `/portal/subscriptions/[id]`: lines, invoices and history (`subscription_events`, migration 0007; also on the staff subscription page)
+- [x] `/portal/invoices`: list (filters, pagination) and detail, with "Pay now" (`portal_pay_invoice`) and a printable invoice
+- [x] Profile page (name, phone, company, address) through `portal_update_profile`; customers can no longer update their `customers` row directly
+- [ ] **Decide:** pausing doesn't skip billing. Resuming catches up on every period missed while paused, because `next_invoice_date` isn't moved forward. Should resume skip the paused periods instead?
 
 ## Phase 7 — Automation
-- [ ] Schedule billing daily: `pg_cron` → `select public._run_billing();` (new migration `0002_cron.sql`)
-- [ ] Optional: mark quotations as expired, and send overdue reminders
+- [x] Schedule billing daily: `pg_cron` job `daily-billing` at 00:30 UTC (06:00 IST) → `select public._run_billing();` (migration `0008_cron.sql`). Verified in `cron.job`; there was no backlog (0 due on 2026-10-31, about 113 due the next day). Dashboard shows schedule status via `billing_schedule_status()`
+- [x] pg_cron proven to execute on this project: a temporary `select 1` job succeeded at 07:26, 07:27 and 07:28 UTC on 2026-10-31, then was removed
+- [ ] Confirm the first real `daily-billing` run succeeded (2026-11-01 06:00 IST): dashboard status line or `cron.job_run_details`
+- [x] Expired quotations are marked: "Expired" badge and "Expired quotations" filter on `/subscriptions`, plus a dashboard follow-up link. They stay in `quotation` status so staff can return them to draft and reissue (verified in `verify-phase4.cjs`)
+- [x] Overdue reminders: `/api/cron/overdue-reminders` (migration `0010_overdue_reminders.sql`: `reminder_count`, `last_reminder_at`). At most once every 7 days and 3 times per invoice; each invoice is claimed before emailing, and the claim is released if the email fails. Protected by `CRON_SECRET` (401 without it; 503 if unset). Scheduled in `vercel.json` at 03:30 UTC (09:00 IST). Verified: auth rejection and a live dry run (787 seeded overdue invoices found, nothing sent); send path covered by `scripts/test-reminders.cjs`
+- [ ] Turn reminders on after deploy: set `CRON_SECRET` and `RESEND_API_KEY`, then `REMINDERS_ENABLED=true` in Vercel. **Only once the seeded demo customers are gone**, otherwise the first run emails placeholder addresses
 
 ## Phase 8 — Quality & ship
-- [ ] SQL tests (pgTAP or plain scripts) for transitions, payment overflow, double billing, discount maths and RLS isolation between customers
-- [ ] Playwright smoke test: sign up → admin creates a subscription → activate → run billing → customer pays
-- [ ] `npm run lint` and `npm run build` with no errors; add a CI workflow
-- [ ] Performance check: seed about 5k subscriptions and 20k invoices, and keep list pages under 2s (indexes exist; paginate everything)
+- [x] SQL tests: `supabase/tests/database_test.sql`, one PL/pgSQL block that always rolls back. It checks:
+  - lifecycle transitions and plan flags
+  - history events
+  - billing maths: best product discount, subscription discount spread, tax rounding
+  - discount usage limits, and that cancelling releases them
+  - double billing: the schedule advances, and the unique period index holds
+  - catch-up billing
+  - payment overflow, partial and full payments, and removing a payment
+  - RLS isolation between two customers, plus staff limits (catalogue writes, invoice totals, payment edits and deletes)
+  - portal functions, and future billing runs
+  All passed on the live project, and nothing persisted. Runner: `npm run test:db` (needs `SUPABASE_DB_URL`)
+- [x] Playwright smoke test (`e2e/smoke.spec.ts`, `npm run test:e2e`): sign up in the UI → admin creates the subscription, adds a line, confirms, activates and bills it → customer pays ₹590.00 in the portal → staff see Paid. Passes; it uses **Bill now** instead of the global Run billing so it never bills other subscriptions. Fixtures are cleaned up
+- [x] `npm run lint`, `npm run typecheck` and `npm run build` with no errors; `npm test` runs 16 focused tests
+- [ ] CI workflow `.github/workflows/ci.yml`: lint, types, build and focused tests on push and PRs; database tests when the `SUPABASE_DB_URL` secret exists; live suites, Playwright and the perf check on manual dispatch. **Not yet run on GitHub** (Phase 5–8 work isn't pushed). Repository secrets needed: `SUPABASE_DB_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_TEST_PASSWORD`
+- [x] Performance check:
+  - HTTP medians for 13 list pages, all under 2 s, with the slowest (`/subscriptions`) at about 1.05 s. This is the local production server against the Tokyo database (`npm run perf`).
+  - At the target volume (5,000 subscriptions and 20,000 invoices, in a rolled-back transaction, `supabase/tests/perf_check.sql`), every list query takes 56 ms or less as the admin with RLS.
 - [ ] Deploy to Vercel with env vars (needed before friends can use the shared test admin). Set `NEXT_PUBLIC_SITE_URL` to the production URL, since reset links are built from it before the request origin. In Supabase, change the Site URL to production and add `https://<prod-domain>/**` (and `https://*-<team>.vercel.app/**` for preview deploys) to Redirect URLs
 - [ ] Before launch: remove `demo.admin@example.com`, or downgrade it to staff
+- [ ] Finding (low): RLS still lets a customer read their own *draft* subscriptions and invoices through the API, although the UI hides them. Consider adding `status <> 'draft'` to the customer branch of those select policies
 
 ---
 
@@ -236,3 +258,97 @@ live integration suites passed against that build, plus all 12 focused tests.
 The final run also checked excessive decimal precision and malformed quotation IDs.
 Browser review confirmed the line preview interactions and quotation document layout.
 No additional SQL is required beyond the already applied 0006.
+
+## Phases 5–7 implementation (2026-10-31)
+
+Migrations `0007_invoices_portal.sql`, `0008_cron.sql` and `0009_run_billing_no_future.sql`
+were applied to the live project via the Supabase connection, with the owner's approval.
+Owner decision: billing invoices are issued as confirmed. Code added:
+- Invoice list: customer filter and validated dates.
+- Invoice detail: discount breakdown, Mark sent, admin payment removal and validated payments.
+- Shared printable page at `/invoices/[id]/print`.
+- Payments list: validated filters.
+- Portal: home summary, subscription detail with history, invoice filters and pagination, profile page.
+- Staff subscription history.
+- Dashboard: billing schedule status.
+
+Verified so far: TypeScript, ESLint and the production build are clean; all 12 focused tests pass.
+A rolled-back admin-role SQL transaction confirmed:
+- A billing run issues a confirmed invoice.
+- Edits to invoice totals, manual invoice inserts, invoice-line deletes and payment edits are blocked.
+- Admins can delete payments.
+- Status changes are logged with their actor.
+
+The `daily-billing` cron job exists and is active. The Supabase security advisor flags only the
+intended definer RPCs, each of which checks the caller itself.
+
+## Phase 5 and 6 verification (2026-10-31)
+
+`DEMO_TEST_PASSWORD` is now in the git-ignored `.env.local`. Against a fresh production build
+on port 3001:
+- `scripts/verify-phase5.cjs` passed:
+  - Bill now issues a confirmed invoice (100 − 10% + 18% tax = 106.20).
+  - Invoice filters work, and malformed parameters return 200.
+  - The detail page shows discount names; the print page and Mark sent work.
+  - Payment validation and the database overpayment guard hold; partial then full payment works; admin payment removal works.
+  - Payments list filters work.
+  - Database locks hold, and future billing runs are rejected.
+  - Cancelling returns discount uses; Confirm and mark sent works on drafts.
+  - Staff can record payments but can't remove them.
+- `scripts/verify-phase6.cjs` passed:
+  - The portal lists only the customer's own non-draft subscriptions.
+  - Subscription detail shows lines, invoices and history; foreign, draft and malformed ids return 404.
+  - Pause, resume and renew work, with "You" attribution.
+  - Plan flags and ownership are enforced, even for forged requests; return paths stay in the portal.
+  - Invoice filters work; drafts and foreign invoices are isolated; discount codes stay private; printing and paying work.
+  - Profile validation works; the billing email is protected, and customers can no longer write their row directly.
+  - History is read-only and scoped to the owner.
+
+One bug found and fixed: form posts send textarea line breaks as CRLF, so addresses are now
+stored with plain newlines, in both the portal profile and the staff customer form.
+
+Regression: the Phase 1–4 suites all pass again against the same build, after 0007's RLS
+and billing changes. Focused tests (12) pass; TypeScript, ESLint and the build are clean.
+All fixtures and temporary accounts were removed (checked: no smoke-test rows or accounts
+remain, invoices are back to 6,990, and there are still 2 admin accounts). No email was sent.
+
+
+## Vercel deploy (2026-10-31)
+
+- The Vercel project `subscription-plan` (team `abhisheks-projects-3ba4a970`) is linked to GitHub
+  `abhishiv17/Subscription-Plan`, so every push to `main` deploys to production.
+  Framework is Next.js, Node is 22.x, and functions now run in `hnd1`, close to Supabase in ap-northeast-1.
+- The first production deploy `dpl_8pk7kH1bxTABmp61pH9HMhkTnQv1` is commit `5d928b3` (Phase 4). The Phase 5 work isn't pushed yet.
+  It's live at https://subscription-plan-rho.vercel.app: `/` and `/login` both return 200.
+- These env vars are set: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key) on all environments,
+  and `NEXT_PUBLIC_SITE_URL=https://subscription-plan-rho.vercel.app` on production.
+- Still to do: add `SUPABASE_SERVICE_ROLE_KEY` (sensitive) in Vercel, then set the Supabase Auth Site URL and Redirect URLs
+  to the production domain and redeploy. After that, tick the Phase 8 deploy item.
+
+## Phase 7 and Phase 8 testing (2026-10-31)
+
+Migration `0010_overdue_reminders.sql` was applied via the Supabase connection with the owner's approval.
+It added reminder columns and a partial index. It also recreated `invoice_overview`, now readable only by
+signed-in users; it previously granted anon full privileges, though RLS showed anon nothing.
+The Phase 4 code that is live on Vercel still works with the new schema: the extra view columns
+and the stricter policies don't affect it.
+
+Phase 7:
+- pg_cron is proven to execute.
+- Expired-quotation badge, filter and dashboard link.
+- Overdue reminders route, off by default. A dry run found 787 seeded overdue invoices, so sending also
+  requires `REMINDERS_ENABLED=true`.
+- `vercel.json` cron: it returns 503 until `CRON_SECRET` is set, so pushing it is safe.
+- `.env.example` documents every variable.
+
+Phase 8:
+- **Database tests:** all passed on the live project and rolled back.
+- **Playwright:** the smoke test passes.
+- **Focused tests:** 16 pass (adds `test-reminders.cjs` with a fake database and mailer).
+- **Regression:** all six live suites pass again against the final build, after 0010 recreated the invoice view. Phase 4 now also checks the expired-quotation filter, badge and dashboard link.
+- **Performance:** checked as recorded above.
+- **CI:** workflow added with npm scripts `typecheck`, `test`, `test:db`, `test:live`, `test:e2e` and `perf`.
+
+Final database check: no test users, customers or plans remain. There are 6,990 invoices, 3,000 subscriptions,
+2 admins and only the `daily-billing` cron job. No email was sent.
+

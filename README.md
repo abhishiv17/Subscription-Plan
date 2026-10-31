@@ -125,3 +125,74 @@ With the same authorized demo environment and running app as above, use
 `node scripts/verify-phase4.cjs` to exercise creation, line guards, lifecycle,
 billing/renewal, customer quotation isolation, plan flags, filters and staff access.
 It uses isolated fixtures and removes its generated invoices/accounts afterward.
+
+## Phase 5 invoices and payments
+
+Apply `supabase/migrations/0007_invoices_portal.sql` (already applied in the demo project
+on 2026-10-31). Billing (the scheduled run, **Run billing** and **Bill now**) now issues
+invoices as **confirmed**, so customers can see and pay them straight away; zero-value
+invoices are marked paid. Drafts created before this change stay as drafts until staff
+confirm them.
+
+- `/invoices` filters by status, overdue, customer (`?customer=<id>`, linked from the
+  customer page), invoice date range and free text. Malformed filters are ignored.
+- The detail page shows lines, each discount applied, totals and payments, with
+  Confirm, **Mark sent** (sets `sent_at`; emails via Resend when `RESEND_API_KEY` is set),
+  Cancel (only while nothing is paid) and Record payment. Payments are validated
+  (amount, two decimals, method, not in the future) and the database rejects overpayment.
+  Admins can remove a payment recorded by mistake; the invoice reopens automatically.
+- `/invoices/[id]/print` is a full-page printable invoice for staff and customers.
+- `/payments` filters by method and payment date.
+
+Database rules added in 0007: invoices are created only by billing; staff can change
+status, due date, notes and `sent_at` but not amounts, parties or periods; invoice lines
+are read-only; payments can be inserted (staff) or deleted (admin) but never edited;
+cancelling an invoice returns its discount uses. 0009 stops `run_billing` from running
+for future dates.
+
+## Phase 6 customer portal
+
+- `/portal` lists the customer's own subscriptions (drafts are hidden), what they owe,
+  and Pause/Resume/Renew/Cancel controls according to the plan flags.
+- `/portal/subscriptions/[id]` shows lines, per-period price, invoices and a history
+  timeline. History comes from `subscription_events`, which a trigger fills on every
+  status or end-date change from 31 Oct 2026 onwards. Staff see it on the subscription page too.
+- `/portal/invoices` (filters and pagination) and `/portal/invoices/[id]` with Pay now,
+  discount names (codes stay private) and a print link.
+- `/portal/profile` edits name, phone, company and address through `portal_update_profile`.
+  The billing email can only be changed by staff; customers can no longer update their
+  `customers` row directly.
+
+## Phase 7 automation
+
+`supabase/migrations/0008_cron.sql` enables `pg_cron` and schedules `daily-billing`
+at 00:30 UTC (06:00 IST). The dashboard shows whether the schedule exists and how its
+last run went. Check runs in SQL with
+`select * from cron.job_run_details order by start_time desc limit 5;`.
+
+Checks for Phases 5 and 6: with the app running on port 3001 and `DEMO_TEST_PASSWORD`
+set (environment or the git-ignored `.env.local`), run `node scripts/verify-phase5.cjs`
+and `node scripts/verify-phase6.cjs`. They create isolated fixtures and temporary accounts
+(one is briefly made staff) and remove everything afterwards.
+
+## Phase 7 additions and Phase 8 testing
+
+- **Expired quotations:** `/subscriptions?status=expired_quotation`, an "Expired" badge, and a dashboard link.
+- **Overdue reminders:** `GET /api/cron/overdue-reminders` (needs `Authorization: Bearer $CRON_SECRET`;
+  add `?dryRun=1` to preview). Vercel Cron calls it daily (`vercel.json`). It emails only when
+  `REMINDERS_ENABLED=true` and `RESEND_API_KEY` is set, at most weekly and three times per invoice.
+  Migration `0010_overdue_reminders.sql` adds the tracking columns.
+
+| Command | What it runs |
+|---|---|
+| `npm run lint`, `npm run typecheck`, `npm run build` | static checks |
+| `npm test` | focused unit tests (no network) |
+| `npm run test:db` | `supabase/tests/database_test.sql` (transitions, billing maths, discounts, double billing, payments, RLS isolation); needs `SUPABASE_DB_URL`; always rolled back |
+| `npm run test:live` | Phase 1–6 live suites against a server on port 3001 |
+| `npm run test:e2e` | Playwright smoke test: sign up → bill → pay (`npx playwright install chromium` first) |
+| `npm run perf` | list-page timings (median must be under 2 s) |
+
+`supabase/tests/perf_check.sql` times the list queries at 5,000 subscriptions and 20,000 invoices
+inside a rolled-back transaction (paste it into the SQL editor).
+CI (`.github/workflows/ci.yml`) runs the static checks and unit tests on every push and PR,
+the database tests when `SUPABASE_DB_URL` is set, and the live suites, Playwright and the perf check on manual dispatch.
