@@ -19,6 +19,7 @@ const icons: Record<string, string> = {
   discounts: "M3 12V4h8l10 10-8 8zM8 8.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z",
   users: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
   portal: "M12 3l8 6v12H4V9zM9 21v-6h6v6",
+  profile: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0",
 };
 
 function NavIcon({ href }: { href: string }) {

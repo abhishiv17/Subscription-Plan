@@ -4,6 +4,7 @@ import { billNow, removeLine, renewSubscription, setSubscriptionStatus } from ".
 import { Flash, type SearchParams } from "@/components/flash";
 import { Button, Card, LinkButton, PageHeader, Pagination, StatusBadge, Table, tdCls } from "@/components/ui";
 import { SubscriptionLineForm } from "@/components/subscription-line-form";
+import { SubscriptionHistory, type SubscriptionEvent } from "@/components/subscription-history";
 import { requireRole } from "@/lib/auth";
 import { getSubscriptionDetail } from "@/lib/subscription-detail";
 import { allowedTransitions, linesEditable, SUBSCRIPTION_STATUSES } from "@/lib/subscriptions";
@@ -24,6 +25,12 @@ export default async function SubscriptionPage({ params, searchParams }: { param
     editable ? supabase.from("taxes").select("id, name, active, rate").order("rate") : Promise.resolve({data: [], error: null}),
   ]);
   for (const e of [error, productError, taxError]) if (e) throw new Error(e.message);
+  const { data: events, error: eventError } = await supabase.from("subscription_events").select("id, event, from_status, to_status, expiry_date, actor, created_at").eq("subscription_id", id).order("created_at", { ascending: false }).limit(50);
+  if (eventError) throw new Error(eventError.message);
+  const actorIds = [...new Set((events ?? []).map(e => e.actor).filter((a): a is string => !!a))];
+  const { data: actors } = actorIds.length ? await supabase.from("profiles").select("id, full_name, email").in("id", actorIds) : { data: [] };
+  const actorNames = new Map((actors ?? []).map(a => [a.id, a.full_name || a.email]));
+  const actorName = (actor: string | null) => actor === null ? "Automatic" : actorNames.get(actor) ?? "Former user";
   const today = new Date().toISOString().slice(0,10);
   const expiredQuote = s.status === "quotation" && !!s.quotation_valid_until && s.quotation_valid_until < today;
   const transitions = allowedTransitions(s.status, s.plans, s.expiry_date ?? s.plans.end_date, today).filter(t => !(expiredQuote && t === "confirmed"));
@@ -61,5 +68,7 @@ export default async function SubscriptionPage({ params, searchParams }: { param
     <h2 className="mb-3 mt-8 text-lg font-semibold">Invoices</h2>
     <Table head={["Invoice", "Period", "Status", "Total", "Due"]} empty={!invoices?.length}>{invoices?.map(i => <tr key={i.id}><td className={tdCls}><Link className="text-brand hover:underline" href={`/invoices/${i.id}`}>{i.number}</Link></td><td className={tdCls}>{fmtDate(i.period_start)} - {fmtDate(i.period_end)}</td><td className={tdCls}><StatusBadge status={i.is_overdue ? "overdue" : i.status} /></td><td className={tdCls}>{fmtMoney(i.total)}</td><td className={tdCls}>{fmtMoney(i.amount_due)}</td></tr>)}</Table>
     <Pagination page={page} pageSize={20} total={count ?? 0} href={p => `/subscriptions/${id}?page=${p}`} />
+    <h2 className="mb-3 mt-8 text-lg font-semibold">History</h2>
+    <Card><SubscriptionHistory events={(events ?? []) as SubscriptionEvent[]} createdAt={s.created_at} actorName={actorName} /></Card>
   </>;
 }

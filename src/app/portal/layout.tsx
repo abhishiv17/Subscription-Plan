@@ -6,6 +6,7 @@ export default async function PortalLayout({ children }: { children: React.React
   const nav = [
     { href: "/portal", label: "My subscriptions" },
     { href: "/portal/invoices", label: "My invoices" },
+    { href: "/portal/profile", label: "My profile" },
   ];
   return (
     <Shell profile={profile} nav={nav}>

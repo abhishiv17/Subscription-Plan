@@ -5,7 +5,7 @@ import { lineAmounts, UUID_RE, type SubscriptionStatus } from "@/lib/subscriptio
 
 export type SubscriptionRecord = {
   id: string; number: string; status: SubscriptionStatus; start_date: string; expiry_date: string | null;
-  quotation_valid_until: string | null; payment_terms_days: number; next_invoice_date: string | null; notes: string | null;
+  quotation_valid_until: string | null; payment_terms_days: number; next_invoice_date: string | null; notes: string | null; created_at: string;
   customers: { id: string; name: string; email: string; company: string | null; address: string | null };
   plans: { name: string; billing_period: string; min_quantity: number; auto_close: boolean; pausable: boolean; closable: boolean; renewable: boolean; end_date: string | null };
   quotation_templates: { name: string } | null; discounts: { name: string } | null;
