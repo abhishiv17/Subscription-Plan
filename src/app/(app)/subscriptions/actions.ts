@@ -11,63 +11,31 @@ export async function createSubscription(form: FormData) {
   const supabase = await createClient();
 
   const templateId = optStr(form, "template_id");
-  let planId = optStr(form, "plan_id");
-  let terms = num(form, "payment_terms_days", 15);
-  let templateLines: { product_id: string; variant_id: string | null; quantity: number; unit_price: number | null; tax_id: string | null }[] = [];
-
+  const back = templateId ? `/subscriptions/new?template=${encodeURIComponent(templateId)}` : "/subscriptions/new";
+  const customerId = optStr(form, "customer_id");
+  const planId = optStr(form, "plan_id");
+  const start = optStr(form, "start_date");
+  const expiry = optStr(form, "expiry_date");
+  if (!customerId) flash(back, "err", "Choose a customer.");
+  if (start && expiry && expiry < start) flash(back, "err", "Expiry date must be on or after start date.");
   if (templateId) {
-    const { data: tpl } = await supabase
-      .from("quotation_templates")
-      .select("plan_id, payment_terms_days, quotation_template_lines(product_id, variant_id, quantity, unit_price, tax_id)")
-      .eq("id", templateId)
-      .single();
-    if (tpl) {
-      planId = planId ?? tpl.plan_id;
-      terms = tpl.payment_terms_days;
-      templateLines = tpl.quotation_template_lines;
-    }
+    const { data: id, error } = await supabase.rpc("create_subscription_from_template", {
+      p_template_id: templateId, p_customer_id: customerId,
+      p_start_date: start ?? undefined, p_expiry_date: expiry,
+      p_discount_id: optStr(form, "discount_id"), p_notes: optStr(form, "notes"), p_plan_id: planId,
+    });
+    if (error) flash(back, "err", error.message);
+    revalidatePath("/subscriptions");
+    flash(`/subscriptions/${id}`, "ok", "Draft created from quotation template.");
   }
-
-  if (!optStr(form, "customer_id")) flash("/subscriptions/new", "err", "Choose a customer.");
-  if (!planId) flash("/subscriptions/new", "err", "Choose a plan or a quotation template that has one.");
-
-  const { data: sub, error } = await supabase
-    .from("subscriptions")
-    .insert({
-      customer_id: str(form, "customer_id"),
-      plan_id: planId,
-      template_id: templateId,
-      discount_id: optStr(form, "discount_id"),
-      start_date: optStr(form, "start_date") ?? undefined,
-      expiry_date: optStr(form, "expiry_date"),
-      payment_terms_days: terms,
-      notes: optStr(form, "notes"),
-    })
-    .select("id")
-    .single();
-  if (error) flash("/subscriptions/new", "err", error.message);
-
-  if (templateLines.length) {
-    const productIds = templateLines.map((l) => l.product_id);
-    const { data: products } = await supabase.from("products").select("id, sales_price, tax_id").in("id", productIds);
-    const { data: variants } = await supabase.from("product_variants").select("id, extra_price").in("product_id", productIds);
-    const { error: lineErr } = await supabase.from("subscription_lines").insert(
-      templateLines.map((l) => {
-        const p = products?.find((x) => x.id === l.product_id);
-        const v = variants?.find((x) => x.id === l.variant_id);
-        return {
-          subscription_id: sub.id,
-          product_id: l.product_id,
-          variant_id: l.variant_id,
-          quantity: l.quantity,
-          unit_price: l.unit_price ?? Number(p?.sales_price ?? 0) + Number(v?.extra_price ?? 0),
-          tax_id: l.tax_id ?? p?.tax_id ?? null,
-        };
-      }),
-    );
-    if (lineErr) flash(`/subscriptions/${sub.id}`, "err", lineErr.message);
-  }
-
+  if (!planId) flash(back, "err", "Choose a plan or a quotation template that has one.");
+  const terms = Number(str(form, "payment_terms_days"));
+  if (!str(form, "payment_terms_days") || !Number.isSafeInteger(terms) || terms < 0) flash(back, "err", "Payment terms must be a non-negative whole number of days.");
+  const { data: sub, error } = await supabase.from("subscriptions").insert({
+    customer_id: customerId, plan_id: planId, discount_id: optStr(form, "discount_id"),
+    start_date: start ?? undefined, expiry_date: expiry, payment_terms_days: terms, notes: optStr(form, "notes"),
+  }).select("id").single();
+  if (error) flash(back, "err", error.message);
   revalidatePath("/subscriptions");
   redirect(`/subscriptions/${sub.id}?ok=${encodeURIComponent("Subscription created.")}`);
 }

@@ -28,13 +28,13 @@ App code lives in `src/`; the database migrations live in `supabase/migrations/`
 
 **To do:** see the phases below. Each phase should end with something you can click through.
 
-> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–2 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
+> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–3 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
 
 ---
 
 ## Phase 0 — Environment
 - [x] Create the Supabase project (`csvucvhfuwdagjhlqktw`) and apply `0001_init.sql`; also applied `0002_lock_down_functions.sql` (revokes RPC access from `anon`, hides trigger functions)
-- [x] Add `web/.env.example` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+- [x] Add `.env.example` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
 - [ ] Supabase → Authentication → URL Configuration: Site URL `http://localhost:3000`, and add `http://localhost:3000/**` to Redirect URLs. **This has to be done by hand in the dashboard.** The only email link that uses it is password reset (`/auth/callback?next=/reset-password`); signup auto-confirms accounts.
 - [x] Harden `/auth/callback` so `next` only accepts same-site paths (prevents an open redirect)
 - [ ] Optional: custom SMTP (e.g. Resend). Supabase's built-in mailer is heavily rate-limited and may only deliver to project team addresses, so testers' password-reset emails can fail without it.
@@ -56,8 +56,8 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - [x] `/users` (admin): list profiles and change roles through a server action that uses `lib/supabase/admin.ts`; invite staff by email with `auth.admin.inviteUserByEmail` and `app_metadata.role`
 
 ## Phase 3 — Quotation templates
-- [ ] `/templates`: list and form (plan, validity days, payment terms) with editable lines (product, variant, quantity, optional price override, tax)
-- [ ] "Create subscription from template" copies the plan, terms and lines into a new draft subscription
+- [x] `/templates`: list and form (plan, validity days, payment terms) with editable lines (product, variant, quantity, optional price override, tax)
+- [x] "Create subscription from template" copies the plan, terms and lines into a new draft subscription
 
 ## Phase 4 — Subscriptions (core flow)
 - [ ] `/subscriptions`: list from `subscription_overview`, filtered by status, customer and plan, paginated
@@ -163,3 +163,33 @@ including staff write denial, discount rollback, customer balances across pages,
 real invitation tokens (without email delivery), and role/metadata synchronization.
 All nine focused invitation/action tests passed. Temporary fixtures were removed.
 Phase 3 implementation started only after both suites passed.
+
+## Phase 3 verification (2026-10-31)
+
+Migration `0005_quotation_templates.sql` applied by the owner. Template headers
+and lines now have complete create/edit forms, validation, flash messages and
+revalidation. Base products remain selectable when variants exist; quantity,
+product/variant, optional price override and tax can be edited. A database trigger
+rejects variants belonging to a different product. Inactive existing selections
+remain visible in edit forms so they are not silently replaced.
+
+The template action preselects it on the new-subscription form. Customer search
+works across the full catalogue and preserves a customer selected from their detail
+page. `create_subscription_from_template` reads a header/line snapshot and copies
+plan, payment terms, notes and priced/taxed lines into a draft in one transaction.
+An explicit alternate plan is supported; otherwise the template plan is used.
+Empty templates and unavailable catalogue entries fail cleanly. A line constraint
+failure rolls back the draft. Existing subscription prices remain unchanged when
+its source template is edited.
+
+Validation: clean production build, TypeScript and ESLint; live integration checks
+in `scripts/verify-phase3.cjs` cover template/header/line mutations, zero and default
+pricing, tax inheritance/overrides, preselected template/customer, customer search,
+quotation validity, rollback, inactive entries, staff access and customer denial.
+Phases 1–2 were rerun before Phase 3 and passed again. No invitation emails were
+sent. All generated fixtures and temporary test accounts were removed.
+
+Final Phase 3 regression: reran all three live suites against the completed production
+build; all passed. Additional checks verified the exact quotation-validity interval,
+cross-template line-removal isolation, missing templates and inactive plans. Browser
+review confirmed the header/line editor layout and preselected subscription link.

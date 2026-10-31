@@ -71,3 +71,25 @@ Checks:
   These use isolated demo fixtures and clean them up. The suites temporarily grant
   a generated account staff access, so run only against an authorized test project.
   Phase 2 verifies real invitation tokens using `generateLink`; it sends no email.
+
+## Phase 3 quotation templates
+
+Apply `supabase/migrations/0005_quotation_templates.sql` (already applied in the demo
+project on 2026-10-31). Staff and admins can create/edit templates, change their
+plan, validity, payment terms and notes, and add/edit/remove product lines. The
+line picker includes the base product and each variant. Blank price overrides
+use list price plus variant extra when copied; an explicit zero remains zero.
+Blank tax overrides inherit the product tax.
+
+Use **Use for a new subscription** to preselect the template, then choose a
+customer. Customer search covers the entire customer catalogue, and a customer
+selected from their detail page remains available even outside the first 50 matches.
+Creating the draft copies its plan (unless explicitly overridden), payment terms,
+notes and lines in one database transaction. Empty templates, inactive plans or
+products, mismatched variants and invalid copied prices fail without leaving a
+partial draft. Later template edits do not change subscriptions already copied.
+
+Run `node scripts/verify-phase3.cjs` with the same test environment described above.
+It checks admin/staff editing, price/tax inheritance, copied draft fields, quotation
+validity, customer isolation and database rollback. It creates and removes only
+isolated smoke-test fixtures and uses the approved temporary staff test access.

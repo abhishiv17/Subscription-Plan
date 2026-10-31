@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { saveTemplate } from "../catalog-actions";
 import { Flash, type SearchParams } from "@/components/flash";
-import { Button, Card, Field, Input, PageHeader, Select, Table, tdCls } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select, Table, Textarea, tdCls } from "@/components/ui";
+import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function TemplatesPage({ searchParams }: { searchParams: SearchParams }) {
+  await requireRole("admin", "staff");
   const supabase = await createClient();
-  const [{ data: templates }, { data: plans }] = await Promise.all([
+  const [{ data: templates, error }, { data: plans, error: plansError }] = await Promise.all([
     supabase.from("quotation_templates").select("id, name, validity_days, payment_terms_days, plans(name), quotation_template_lines(id)").order("name"),
     supabase.from("plans").select("id, name").eq("active", true).order("name"),
   ]);
+  if (error || plansError) throw new Error((error || plansError)!.message);
 
   return (
     <>
@@ -40,9 +43,10 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Se
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Valid for (days)"><Input name="validity_days" type="number" min="1" defaultValue={30} /></Field>
-              <Field label="Payment terms (days)"><Input name="payment_terms_days" type="number" min="0" defaultValue={15} /></Field>
+              <Field label="Valid for (days)"><Input name="validity_days" type="number" min="1" step="1" required defaultValue={30} /></Field>
+              <Field label="Payment terms (days)"><Input name="payment_terms_days" type="number" min="0" step="1" required defaultValue={15} /></Field>
             </div>
+            <Field label="Notes"><Textarea name="notes" /></Field>
             <Button type="submit" className="w-full">Create and add lines</Button>
           </form>
         </Card>

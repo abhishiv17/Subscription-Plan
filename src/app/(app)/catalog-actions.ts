@@ -168,45 +168,67 @@ export async function saveTemplate(id: string | null, form: FormData) {
   const supabase = await createClient();
   const back = id ? `/templates/${id}` : "/templates";
   if (!str(form, "name")) flash(back, "err", "Template name is required.");
+  const validity = Number(str(form, "validity_days"));
+  const terms = Number(str(form, "payment_terms_days"));
+  if (!str(form, "validity_days") || !Number.isSafeInteger(validity) || validity < 1) flash(back, "err", "Validity must be a positive whole number of days.");
+  if (!str(form, "payment_terms_days") || !Number.isSafeInteger(terms) || terms < 0) flash(back, "err", "Payment terms must be a non-negative whole number of days.");
   const values = {
-    name: str(form, "name"),
-    plan_id: optStr(form, "plan_id"),
-    validity_days: Math.max(1, num(form, "validity_days", 30)),
-    payment_terms_days: Math.max(0, num(form, "payment_terms_days", 15)),
-    notes: optStr(form, "notes"),
+    name: str(form, "name"), plan_id: optStr(form, "plan_id"),
+    validity_days: validity, payment_terms_days: terms, notes: optStr(form, "notes"),
   };
   const { data, error } = id
     ? await supabase.from("quotation_templates").update(values).eq("id", id).select("id").single()
     : await supabase.from("quotation_templates").insert(values).select("id").single();
   if (error) flash(back, "err", error.message);
-  revalidatePath("/templates");
-  redirect(`/templates/${data.id}?ok=${encodeURIComponent("Template saved.")}`);
+  revalidatePath("/templates", "layout");
+  flash(`/templates/${data.id}`, "ok", "Template saved.");
 }
 
-export async function addTemplateLine(templateId: string, form: FormData) {
+export async function saveTemplateLine(templateId: string, lineId: string | null, form: FormData) {
   await requireRole("admin", "staff");
   const supabase = await createClient();
   const back = `/templates/${templateId}`;
   const [productId, variantId] = str(form, "product").split("|");
+  const quantity = Number(str(form, "quantity"));
+  const price = optNum(form, "unit_price");
   if (!productId) flash(back, "err", "Choose a product.");
-  const { error } = await supabase.from("quotation_template_lines").insert({
-    template_id: templateId,
-    product_id: productId,
-    variant_id: variantId || null,
-    quantity: num(form, "quantity", 1),
-    unit_price: optNum(form, "unit_price"),
-    tax_id: optStr(form, "tax_id"),
-  });
+  if (!Number.isFinite(quantity) || quantity <= 0) flash(back, "err", "Quantity must be greater than zero.");
+  if (price !== null && (!Number.isFinite(price) || price < 0)) flash(back, "err", "Price must be a valid non-negative number, or empty for list price.");
+  let current: { product_id: string; tax_id: string | null } | null = null;
+  if (lineId) {
+    const { data, error } = await supabase.from("quotation_template_lines").select("product_id, tax_id").eq("id", lineId).eq("template_id", templateId).single();
+    if (error) flash(back, "err", "Template line not found.");
+    current = data;
+  }
+  const { data: product, error: productError } = await supabase.from("products").select("active").eq("id", productId).single();
+  if (productError || !product) flash(back, "err", "Product not found.");
+  if (!product.active && productId !== current?.product_id) flash(back, "err", "Choose an active product.");
+  if (variantId) {
+    const { data, error } = await supabase.from("product_variants").select("id").eq("id", variantId).eq("product_id", productId).single();
+    if (error || !data) flash(back, "err", "The selected variant does not belong to this product.");
+  }
+  const taxId = optStr(form, "tax_id");
+  if (taxId) {
+    const { data, error } = await supabase.from("taxes").select("active").eq("id", taxId).single();
+    if (error || !data || (!data.active && taxId !== current?.tax_id)) flash(back, "err", "Choose an active tax rule, or keep the existing tax.");
+  }
+  const values = { product_id: productId, variant_id: variantId || null, quantity, unit_price: price, tax_id: taxId };
+  const { error } = lineId
+    ? await supabase.from("quotation_template_lines").update(values).eq("id", lineId).eq("template_id", templateId).select("id").single()
+    : await supabase.from("quotation_template_lines").insert({ ...values, template_id: templateId });
   if (error) flash(back, "err", error.message);
-  revalidatePath(back);
-  flash(back, "ok", "Line added.");
+  revalidatePath("/templates", "layout");
+  flash(back, "ok", lineId ? "Template line saved." : "Template line added.");
 }
 
 export async function removeTemplateLine(templateId: string, lineId: string) {
   await requireRole("admin", "staff");
   const supabase = await createClient();
-  await supabase.from("quotation_template_lines").delete().eq("id", lineId);
-  revalidatePath(`/templates/${templateId}`);
+  const back = `/templates/${templateId}`;
+  const { error } = await supabase.from("quotation_template_lines").delete().eq("id", lineId).eq("template_id", templateId).select("id").single();
+  if (error) flash(back, "err", error.message);
+  revalidatePath("/templates", "layout");
+  flash(back, "ok", "Template line removed.");
 }
 
 export async function updateVariant(productId: string, variantId: string, form: FormData) {
