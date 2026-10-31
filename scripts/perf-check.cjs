@@ -1,3 +1,4 @@
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 // Times the main list pages over HTTP as the admin (production server on port 3001).
 // Each page is fetched once to warm up, then RUNS times; the median must stay under 2s.
