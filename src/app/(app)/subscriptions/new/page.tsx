@@ -10,14 +10,14 @@ export default async function NewSubscriptionPage({ searchParams }: { searchPara
   const templateId = typeof sp.template === "string" ? sp.template : "";
   const customerId = typeof sp.customer === "string" ? sp.customer : "";
   const customerSearch = typeof sp.customerSearch === "string" ? sp.customerSearch.replace(/[^\p{L}\p{N}@._+ -]/gu, "").trim().slice(0, 100) : "";
-  let customerQuery = supabase.from("customers").select("id, name, company").order("name").order("id").limit(50);
+  let customerQuery = supabase.from("customers").select("id, name, company, email").order("name").order("id").limit(50);
   if (customerSearch) customerQuery = customerQuery.or(`name.ilike.%${customerSearch}%,email.ilike.%${customerSearch}%,company.ilike.%${customerSearch}%`);
   const [customerResult, planResult, templateResult, discountResult, selectedResult] = await Promise.all([
     customerQuery,
     supabase.from("plans").select("id, name, price, billing_period").eq("active", true).order("name"),
     supabase.from("quotation_templates").select("id, name, validity_days").order("name"),
     supabase.from("discounts").select("id, name").eq("scope", "subscription").eq("active", true).order("name"),
-    customerId ? supabase.from("customers").select("id, name, company").eq("id", customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    customerId ? supabase.from("customers").select("id, name, company, email").eq("id", customerId).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   for (const result of [customerResult, planResult, templateResult, discountResult, selectedResult]) if (result.error) throw new Error(result.error.message);
   const customers = customerResult.data ?? [];
@@ -42,7 +42,7 @@ export default async function NewSubscriptionPage({ searchParams }: { searchPara
             <Select name="customer_id" required defaultValue={typeof sp.customer === "string" ? sp.customer : ""}>
               <option value="">Choose a customer…</option>
               {customers?.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ""}</option>
+                <option key={c.id} value={c.id}>{c.name} ({c.email}){c.company ? ` (${c.company})` : ""}</option>
               ))}
             </Select>
           </Field>
@@ -64,7 +64,7 @@ export default async function NewSubscriptionPage({ searchParams }: { searchPara
               {discounts?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </Select>
           </Field>
-          <Field label="Start date"><Input type="date" name="start_date" defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
+          <Field label="Start date"><Input type="date" name="start_date" required defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
           <Field label="Expiry date"><Input type="date" name="expiry_date" /></Field>
           <Field label="Payment terms (days)" hint="A selected template supplies its own payment terms"><Input type="number" min={0} name="payment_terms_days" defaultValue={15} /></Field>
           <div className="md:col-span-2"><Field label="Notes"><Textarea name="notes" /></Field></div>

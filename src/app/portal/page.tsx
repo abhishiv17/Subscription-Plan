@@ -1,6 +1,6 @@
 import { portalRenew, portalSetStatus } from "./actions";
 import { Flash, type SearchParams } from "@/components/flash";
-import { Button, Card, PageHeader, StatusBadge } from "@/components/ui";
+import { Button, Card, LinkButton, PageHeader, StatusBadge } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtMoney } from "@/lib/format";
 
@@ -10,7 +10,7 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
   // RLS limits these rows to the signed-in customer's own subscriptions.
   const { data: subs } = await supabase
     .from("subscriptions")
-    .select("id, number, status, start_date, expiry_date, next_invoice_date, plans(name, billing_period, pausable, closable, renewable), subscription_lines(id, quantity, unit_price, amount, products(name), product_variants(value))")
+    .select("id, number, status, quotation_valid_until, start_date, expiry_date, next_invoice_date, plans(name, billing_period, pausable, closable, renewable), subscription_lines(id, quantity, unit_price, amount, products(name), product_variants(value))")
     .order("created_at", { ascending: false });
 
   return (
@@ -45,6 +45,7 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
                 Started {fmtDate(s.start_date)} · ends {fmtDate(s.expiry_date)}
                 {s.status === "active" && <> · next invoice {fmtDate(s.next_invoice_date)}</>}
               </div>
+              {s.quotation_valid_until && s.status !== "draft" && <div className="mt-4"><LinkButton variant="secondary" href={`/quotations/${s.id}`}>View quotation</LinkButton></div>}
               {live && (
                 <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                   {s.status === "active" && s.plans.pausable && (

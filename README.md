@@ -93,3 +93,35 @@ Run `node scripts/verify-phase3.cjs` with the same test environment described ab
 It checks admin/staff editing, price/tax inheritance, copied draft fields, quotation
 validity, customer isolation and database rollback. It creates and removes only
 isolated smoke-test fixtures and uses the approved temporary staff test access.
+
+## Phase 4 subscription workflow
+
+Apply `supabase/migrations/0006_subscription_line_guards.sql` (already applied in
+the demo project on 2026-10-31). Subscription lines can be added/edited/removed in
+draft or quotation. Confirmation locks them; server actions and a database trigger
+both enforce the lock, including during concurrent lifecycle changes. Product and
+variant associations are validated in both layers.
+
+The list supports status, customer and plan filters, customer search, and pagination.
+Create a subscription from scratch or an optional template, with an optional active
+subscription discount and start/expiry dates. The detail page provides separate
+product and variant pickers, default or overridden pricing, tax and description
+editing, and a live subtotal/tax/total preview. Monetary previews round each line
+using scaled integer arithmetic to match Postgres. Estimates are explicitly before
+eligible discounts; billing applies discounts on the invoice date.
+
+Lifecycle controls follow state and plan flags. Database validation errors (minimum
+quantity, expired quotation, unavailable plan dates, etc.) appear as flash messages.
+Returning a quotation to draft clears its validity so reissuing sets a fresh date.
+Bill now creates the next period invoice; it cannot bill a period starting beyond
+subscription expiry. Renew extends expiry, and related invoices are paginated.
+
+`/quotations/[id]` is a print-friendly quotation with terms, lines, tax and validity.
+Staff/admins can preview drafts. Customers can open only their own issued quotations,
+from a link in their portal. Drafts and other customers' quotations return 404.
+
+Checks: `node --test scripts/test-subscriptions.cjs scripts/test-people.cjs`.
+With the same authorized demo environment and running app as above, use
+`node scripts/verify-phase4.cjs` to exercise creation, line guards, lifecycle,
+billing/renewal, customer quotation isolation, plan flags, filters and staff access.
+It uses isolated fixtures and removes its generated invoices/accounts afterward.

@@ -28,7 +28,7 @@ App code lives in `src/`; the database migrations live in `supabase/migrations/`
 
 **To do:** see the phases below. Each phase should end with something you can click through.
 
-> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–3 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
+> **Code vs. verified (2026-10-31):** pages for most of Phases 1–6 already exist in `src/app` (taxes, products, plans, discounts, customers, users, templates, subscriptions, invoices, payments, portal). Phases 1–4 are implemented and verified below; later phases remain unticked until verified. Not yet in the code: `/portal/subscriptions/[id]`, the portal profile page, `/invoices/[id]/print` as its own route, and the `pg_cron` migration.
 
 ---
 
@@ -60,16 +60,16 @@ Pattern for each module: list page → new/edit form → server action → `reva
 - [x] "Create subscription from template" copies the plan, terms and lines into a new draft subscription
 
 ## Phase 4 — Subscriptions (core flow)
-- [ ] `/subscriptions`: list from `subscription_overview`, filtered by status, customer and plan, paginated
-- [ ] New subscription: pick customer, plan, optional template and optional discount, then start date
-- [ ] Detail page:
+- [x] `/subscriptions`: list from `subscription_overview`, filtered by status, customer and plan, paginated
+- [x] New subscription: pick customer, plan, optional template and optional discount, then start date
+- [x] Detail page:
   - line editor (product → variant → price = sales price + variant extra, editable), with a live total
   - status bar showing draft → quotation → confirmed → active ⇄ paused → closed
   - action buttons that show only the transitions allowed from the current state; trigger errors go to a flash message
   - "Bill now" (`bill_subscription_now`) and "Renew" (`renew_subscription`)
   - related invoices
-- [ ] Lock lines once the subscription is active, and add a guard in the server action
-- [ ] Quotation view the customer can print, showing the valid-until date
+- [x] Lock lines once the subscription is active, and add a guard in the server action
+- [x] Quotation view the customer can print, showing the valid-until date
 
 ## Phase 5 — Invoices & payments
 - [ ] `/invoices`: list from `invoice_overview` with an overdue badge and filters for status, customer, date range and overdue
@@ -193,3 +193,46 @@ Final Phase 3 regression: reran all three live suites against the completed prod
 build; all passed. Additional checks verified the exact quotation-validity interval,
 cross-template line-removal isolation, missing templates and inactive plans. Browser
 review confirmed the header/line editor layout and preselected subscription link.
+
+## Phase 4 verification (2026-10-31)
+
+Pulled `main` (already current at `f2a472a`). The owner applied
+`0006_subscription_line_guards.sql`. Subscriptions now support status/customer/plan
+filters with pagination, full-catalogue customer search, and distinguishable customer
+options including email. Creation accepts a customer, plan, optional template and
+active subscription discount, start date, expiry and payment terms.
+
+The detail page supports product -> variant selection, automatic or overridden unit
+prices, quantity/tax/description editing, and a live line-total preview. Integer-scaled
+rounding matches Postgres subtotals/tax at half-cent boundaries. Estimates are shown
+before eligible billing-date discounts. Line edits are scoped to the selected
+subscription; inactive historical selections are preserved. Confirmation locks lines:
+server guards and a row-locking database trigger reject insert/update/delete in
+confirmed, active, paused and closed states, and reject reparenting/mismatched variants.
+
+Status controls show only valid lifecycle and plan-flag transitions. Expired quotations
+cannot confirm; returning to draft clears validity so reissue sets a fresh deadline.
+Bill now creates an invoice and advances the schedule, while manual billing beyond
+expiry is blocked. Renew extends expiry and related invoices are paginated.
+
+`/quotations/[id]` provides a printable quotation with customer details, product lines,
+terms, amounts and valid-until date. Staff/admins can preview drafts. Customers can
+read/print only their own issued quotations; their portal links to those quotations.
+Unissued drafts, foreign quotations and malformed IDs return 404 for authenticated
+customers. Quotation estimates are explicitly before eligible invoice discounts.
+
+The live `scripts/verify-phase4.cjs` suite passed manual creation, line defaults and
+overrides, minimum quantities, line edits/removal, forged actions and direct API
+line-lock attempts, quotation issuance/expiry/reissue and ownership isolation,
+confirmation/activation/pause/resume/close, discount/tax invoice arithmetic, expiry
+billing guard, renewal, related invoices, restricted plan flags, filters, and approved
+temporary staff access. Browser interaction confirmed product, variant, quantity and
+manual price changes recalculate the preview without submitting changes to seed data.
+Focused tests cover rounding, editability and allowed transitions. Generated fixtures,
+invoices and temporary test accounts were removed. No invitation emails were sent.
+
+Final Phase 4 regression: clean production build, TypeScript and ESLint; all four
+live integration suites passed against that build, plus all 12 focused tests.
+The final run also checked excessive decimal precision and malformed quotation IDs.
+Browser review confirmed the line preview interactions and quotation document layout.
+No additional SQL is required beyond the already applied 0006.
