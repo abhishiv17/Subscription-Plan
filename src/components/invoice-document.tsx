@@ -1,8 +1,10 @@
 import { StatusBadge } from "@/components/ui";
 import { fmtDate, fmtMoney, titleCase } from "@/lib/format";
 
+type InvoiceDiscountRow = { discount_id: string; name: string; discount_type: string; value: number; scope: string; amount: number };
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export function InvoiceDocument({ invoice, lines, payments }: { invoice: any; lines: any[]; payments: any[] }) {
+export function InvoiceDocument({ invoice, lines, payments, discounts = [] }: { invoice: any; lines: any[]; payments: any[]; discounts?: InvoiceDiscountRow[] }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm print:border-0 print:p-0 print:shadow-none">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-6">
@@ -65,11 +67,24 @@ export function InvoiceDocument({ invoice, lines, payments }: { invoice: any; li
         {Number(invoice.discount_total) > 0 && (
           <div className="flex justify-between text-emerald-700"><span>Discounts</span><span>−{fmtMoney(invoice.discount_total)}</span></div>
         )}
+        {discounts.map((d) => (
+          <div key={d.discount_id} className="flex justify-between pl-3 text-xs text-emerald-700">
+            <span>{d.name} ({d.discount_type === "percent" ? `${Number(d.value)}%` : fmtMoney(d.value)}{d.scope === "product" ? " on products" : ""})</span>
+            <span>−{fmtMoney(d.amount)}</span>
+          </div>
+        ))}
         <div className="flex justify-between"><span className="text-slate-500">Taxes</span><span>{fmtMoney(invoice.tax_total)}</span></div>
         <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold"><span>Total</span><span>{fmtMoney(invoice.total)}</span></div>
         <div className="flex justify-between"><span className="text-slate-500">Paid</span><span>{fmtMoney(invoice.amount_paid)}</span></div>
         <div className="flex justify-between font-semibold"><span>Amount due</span><span>{fmtMoney(invoice.amount_due)}</span></div>
       </div>
+
+      {invoice.notes && (
+        <div className="mt-6 border-t border-slate-200 pt-4 text-sm">
+          <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">Notes</div>
+          <p className="whitespace-pre-wrap text-slate-600">{invoice.notes}</p>
+        </div>
+      )}
 
       {payments.length > 0 && (
         <div className="mt-6 border-t border-slate-200 pt-4 text-sm">

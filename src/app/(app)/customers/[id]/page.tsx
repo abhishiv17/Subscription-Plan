@@ -51,7 +51,7 @@ export default async function CustomerPage({ params, searchParams }: { params: P
             <Pagination page={subscriptionsPage} pageSize={pageSize} total={subsCount ?? 0} href={p => href(invoicesPage, p)} />
           </div>
           <div>
-            <h2 className="mb-2 text-sm font-semibold">Invoice history</h2>
+            <h2 className="mb-2 flex items-center justify-between text-sm font-semibold">Invoice history <Link className="text-xs font-medium text-brand hover:underline" href={`/invoices?customer=${id}`}>Filter all invoices</Link></h2>
             <p className="mb-3 text-xs text-slate-500">Outstanding balance includes all confirmed unpaid invoices, across every page.</p>
             <Table head={["Invoice", "Date", "Status", "Total", "Due"]} empty={!invoices?.length}>
               {invoices?.map((i) => (

@@ -3,16 +3,17 @@ import { type SearchParams } from "@/components/flash";
 import { Button, Input, PageHeader, Pagination, Select, Table, tdCls } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtMoney, titleCase } from "@/lib/format";
+import { PAYMENT_METHODS } from "@/lib/constants";
+import { dateParam, isPaymentMethod, pageParam } from "@/lib/invoices";
 
 const PAGE_SIZE = 25;
-const METHODS = ["bank_transfer", "card", "upi", "cash", "cheque", "other"];
 
 export default async function PaymentsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const method = typeof sp.method === "string" ? sp.method : "";
-  const from = typeof sp.from === "string" ? sp.from : "";
-  const to = typeof sp.to === "string" ? sp.to : "";
-  const page = Math.max(1, Number(sp.page) || 1);
+  const method = isPaymentMethod(sp.method) ? sp.method : "";
+  const from = dateParam(sp.from);
+  const to = dateParam(sp.to);
+  const page = pageParam(sp.page);
 
   const supabase = await createClient();
   let query = supabase
@@ -36,7 +37,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
         <div className="w-44">
           <Select name="method" defaultValue={method}>
             <option value="">All methods</option>
-            {METHODS.map((m) => <option key={m} value={m}>{titleCase(m)}</option>)}
+            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{titleCase(m)}</option>)}
           </Select>
         </div>
         <label className="text-xs text-slate-500">From<Input type="date" name="from" defaultValue={from} /></label>
