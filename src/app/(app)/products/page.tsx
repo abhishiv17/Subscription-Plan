@@ -10,15 +10,27 @@ import { fmtMoney, titleCase } from "@/lib/format";
 export default async function ProductsPage({ searchParams }: { searchParams: SearchParams }) {
   const profile = await getProfile();
   const supabase = await createClient();
-  const [{ data: products }, { data: taxes }] = await Promise.all([
-    supabase.from("products").select("id, name, product_type, sales_price, cost_price, active, taxes(name), product_variants(id)").order("name"),
+  const sp = await searchParams;
+  const type = typeof sp.type === "string" && PRODUCT_TYPES.includes(sp.type as typeof PRODUCT_TYPES[number]) ? sp.type : "";
+  const active = sp.active === "true" || sp.active === "false" ? sp.active : "";
+  let query = supabase.from("products").select("id, name, product_type, sales_price, cost_price, active, taxes(name), product_variants(id)").order("name");
+  if (type) query = query.eq("product_type", type);
+  if (active) query = query.eq("active", active === "true");
+  const [{ data: products, error }, { data: taxes }] = await Promise.all([
+    query,
     supabase.from("taxes").select("id, name").eq("active", true),
   ]);
+  if (error) throw new Error(error.message);
 
   return (
     <>
       <PageHeader title="Products" subtitle="What Brightloop sells, with variants such as brand" />
       <Flash searchParams={searchParams} />
+      <form className="mb-4 flex items-end gap-3" action="/products">
+        <Field label="Type"><Select name="type" defaultValue={type}><option value="">All types</option>{PRODUCT_TYPES.map(t => <option key={t} value={t}>{titleCase(t)}</option>)}</Select></Field>
+        <Field label="Status"><Select name="active" defaultValue={active}><option value="">All statuses</option><option value="true">Active</option><option value="false">Inactive</option></Select></Field>
+        <Button>Filter</Button><Link href="/products" className="text-sm text-brand">Reset</Link>
+      </form>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className={profile?.role === "admin" ? "lg:col-span-2" : "lg:col-span-3"}>
           <Table head={["Name", "Type", "Sales price", "Cost price", "Tax", "Variants", "Status"]} empty={!products?.length}>

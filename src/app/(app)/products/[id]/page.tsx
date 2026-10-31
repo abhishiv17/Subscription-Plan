@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { addVariant, removeVariant, saveProduct } from "../../catalog-actions";
+import { addVariant, removeVariant, saveProduct, updateVariant } from "../../catalog-actions";
 import { PRODUCT_TYPES } from "@/lib/constants";
 import { Flash, type SearchParams } from "@/components/flash";
 import { Button, Card, Field, Input, PageHeader, Select, Table, Textarea, tdCls } from "@/components/ui";
@@ -14,7 +14,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   const supabase = await createClient();
   const [{ data: p }, { data: taxes }] = await Promise.all([
     supabase.from("products").select("*, product_variants(*)").eq("id", id).single(),
-    supabase.from("taxes").select("id, name").eq("active", true),
+    supabase.from("taxes").select("id, name, active"),
   ]);
   if (!p) notFound();
 
@@ -39,7 +39,7 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
               <Field label="Tax">
                 <Select name="tax_id" defaultValue={p.tax_id ?? ""}>
                   <option value="">No tax</option>
-                  {taxes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {taxes?.map((t) => <option key={t.id} value={t.id}>{t.name}{!t.active ? " (inactive)" : ""}</option>)}
                 </Select>
               </Field>
               <Field label="Notes"><Textarea name="notes" defaultValue={p.notes ?? ""} /></Field>
@@ -59,6 +59,12 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
                 <td className={tdCls}>+{fmtMoney(v.extra_price)}</td>
                 <td className={tdCls}>{fmtMoney(Number(p.sales_price) + Number(v.extra_price))}</td>
                 <td className={`${tdCls} text-right`}>
+                  {isAdmin && <details className="mb-2"><summary className="cursor-pointer text-brand">Edit</summary><form action={updateVariant.bind(null, p.id, v.id)} className="mt-2 space-y-2">
+                    <Input aria-label="Attribute" name="attribute" defaultValue={v.attribute} required />
+                    <Input aria-label="Value" name="value" defaultValue={v.value} required />
+                    <Input aria-label="Extra price" name="extra_price" type="number" step="0.01" defaultValue={v.extra_price} required />
+                    <Button>Save variant</Button>
+                  </form></details>}
                   {isAdmin && <form action={removeVariant.bind(null, p.id, v.id)}><Button variant="ghost" className="text-red-600">Remove</Button></form>}
                 </td>
               </tr>

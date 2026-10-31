@@ -108,3 +108,17 @@ Pattern for each module: list page → new/edit form → server action → `reva
 
 ## Log
 - **2026-10-31**: Migrations 0001–0002 applied and seed loaded. Owner promoted to admin. Shared test admin `demo.admin@example.com` created (the password was given in chat and is not stored here).
+
+## Phase 1 implementation update (2026-10-31)
+
+Catalogue implementation now includes tax editing, product type/status filters,
+inline variant editing, discount editing, and staff read-only access to all four
+catalogue modules. Apply `supabase/migrations/0003_catalog_discount.sql` before
+using discount saves; this makes rule and product-link changes atomic and preserves
+`used_count`. No reseed is required.
+
+Validation: production build and TypeScript passed; ESLint has zero errors and one
+existing unused import warning in invoices. Live end-to-end verification remains
+pending: the browser could not reach the verification server on port 3001, and the
+Supabase sign-in request failed from this environment. Checkboxes above remain
+unticked until those flows have been verified against the migrated database.

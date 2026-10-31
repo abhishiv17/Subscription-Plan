@@ -7,11 +7,24 @@ import { bool, flash, num, optNum, optStr, str } from "@/lib/flash";
 import { createClient } from "@/lib/supabase/server";
 
 // ───────── products & variants (admin) ─────────
+function validateNumbers(form: FormData, back: string, keys: string[]) {
+  for (const key of keys) {
+    const value = Number(str(form, key));
+    if (!Number.isFinite(value) || value < 0) flash(back, "err", "Prices and minimums must be valid non-negative numbers.");
+  }
+}
+
+function validateDates(form: FormData, back: string) {
+  const start = str(form, "start_date"), end = str(form, "end_date");
+  if (start && end && end < start) flash(back, "err", "End date must be on or after start date.");
+}
+
 export async function saveProduct(id: string | null, form: FormData) {
   await requireRole("admin");
   const supabase = await createClient();
   const back = id ? `/products/${id}` : "/products";
   if (!str(form, "name")) flash(back, "err", "Product name is required.");
+  validateNumbers(form, back, ["sales_price", "cost_price"]);
   const values = {
     name: str(form, "name"),
     product_type: str(form, "product_type"),
@@ -25,7 +38,7 @@ export async function saveProduct(id: string | null, form: FormData) {
     ? await supabase.from("products").update(values).eq("id", id).select("id").single()
     : await supabase.from("products").insert(values).select("id").single();
   if (error) flash(back, "err", error.message);
-  revalidatePath("/products");
+  revalidatePath("/products", "layout");
   redirect(`/products/${data.id}?ok=${encodeURIComponent("Product saved.")}`);
 }
 
@@ -33,6 +46,7 @@ export async function addVariant(productId: string, form: FormData) {
   await requireRole("admin");
   const supabase = await createClient();
   const back = `/products/${productId}`;
+  if (!str(form, "attribute") || !str(form, "value") || !Number.isFinite(Number(str(form, "extra_price")))) flash(back, "err", "Enter an attribute, value and valid extra price.");
   const { error } = await supabase.from("product_variants").insert({
     product_id: productId,
     attribute: str(form, "attribute"),
@@ -47,7 +61,7 @@ export async function addVariant(productId: string, form: FormData) {
 export async function removeVariant(productId: string, variantId: string) {
   await requireRole("admin");
   const supabase = await createClient();
-  const { error } = await supabase.from("product_variants").delete().eq("id", variantId);
+  const { error } = await supabase.from("product_variants").delete().eq("id", variantId).eq("product_id", productId);
   const back = `/products/${productId}`;
   if (error) flash(back, "err", error.message);
   revalidatePath(back);
@@ -60,6 +74,9 @@ export async function savePlan(id: string | null, form: FormData) {
   const supabase = await createClient();
   const back = id ? `/plans/${id}` : "/plans/new";
   if (!str(form, "name")) flash(back, "err", "Plan name is required.");
+  validateNumbers(form, back, ["price", "min_quantity"]);
+  if (!Number.isInteger(num(form, "min_quantity")) || num(form, "min_quantity") < 1) flash(back, "err", "Minimum quantity must be a positive whole number.");
+  validateDates(form, back);
   const values = {
     name: str(form, "name"),
     price: num(form, "price"),
@@ -75,75 +92,74 @@ export async function savePlan(id: string | null, form: FormData) {
     active: id ? bool(form, "active") : true,
   };
   const { error } = id
-    ? await supabase.from("plans").update(values).eq("id", id)
+    ? await supabase.from("plans").update(values).eq("id", id).select("id").single()
     : await supabase.from("plans").insert(values);
   if (error) flash(back, "err", error.message);
-  revalidatePath("/plans");
+  revalidatePath("/plans", "layout");
   flash("/plans", "ok", `Plan "${values.name}" saved.`);
 }
 
 // ───────── taxes (admin) ─────────
-export async function saveTax(form: FormData) {
+export async function saveTax(id: string | null, form: FormData) {
   await requireRole("admin");
   const supabase = await createClient();
   const rate = num(form, "rate", -1);
   if (!str(form, "name") || rate < 0 || rate > 100) flash("/taxes", "err", "Enter a name and a rate between 0 and 100.");
-  const { error } = await supabase.from("taxes").insert({ name: str(form, "name"), rate });
+  const values = { name: str(form, "name"), rate };
+  const { error } = id ? await supabase.from("taxes").update(values).eq("id", id).select("id").single() : await supabase.from("taxes").insert(values);
   if (error) flash("/taxes", "err", error.message);
   revalidatePath("/taxes");
-  flash("/taxes", "ok", "Tax rule added.");
+  flash("/taxes", "ok", "Tax rule saved.");
 }
 
 export async function toggleTax(id: string, active: boolean) {
   await requireRole("admin");
   const supabase = await createClient();
-  await supabase.from("taxes").update({ active }).eq("id", id);
+  const { error } = await supabase.from("taxes").update({ active }).eq("id", id).select("id").single();
+  if (error) flash("/taxes", "err", error.message);
   revalidatePath("/taxes");
+  flash("/taxes", "ok", "Tax status updated.");
 }
 
 // ───────── discounts (admin only) ─────────
-export async function saveDiscount(form: FormData) {
+export async function saveDiscount(id: string | null, form: FormData) {
   await requireRole("admin");
   const supabase = await createClient();
+  const back = id ? `/discounts/${id}` : "/discounts";
   const scope = str(form, "scope");
-  const productIds = form.getAll("product_ids").map(String).filter(Boolean);
-  const value = num(form, "value");
-  if (!str(form, "name") || value <= 0) flash("/discounts", "err", "Enter a name and a value greater than zero.");
-  if (str(form, "discount_type") === "percent" && value > 100) flash("/discounts", "err", "A percentage can't exceed 100.");
-  if (scope === "product" && productIds.length === 0) flash("/discounts", "err", "Pick at least one product for a product discount.");
-
-  const { data, error } = await supabase
-    .from("discounts")
-    .insert({
-      name: str(form, "name"),
-      code: optStr(form, "code")?.toUpperCase() ?? null,
-      discount_type: str(form, "discount_type"),
-      value,
-      scope,
-      min_purchase: num(form, "min_purchase"),
-      min_quantity: num(form, "min_quantity"),
-      start_date: optStr(form, "start_date"),
-      end_date: optStr(form, "end_date"),
-      usage_limit: optNum(form, "usage_limit"),
-    })
-    .select("id")
-    .single();
-  if (error) flash("/discounts", "err", error.code === "23505" ? "That discount code is already used." : error.message);
-  if (scope === "product") {
-    const { error: linkErr } = await supabase
-      .from("discount_products")
-      .insert(productIds.map((product_id) => ({ discount_id: data.id, product_id })));
-    if (linkErr) flash("/discounts", "err", linkErr.message);
-  }
-  revalidatePath("/discounts");
-  flash("/discounts", "ok", "Discount rule created. It will apply automatically on the next eligible invoice.");
+  const productIds = [...new Set(form.getAll("product_ids").map(String).filter(Boolean))];
+  const value = Number(str(form, "value"));
+  if (!str(form, "name") || !Number.isFinite(value) || value <= 0) flash(back, "err", "Enter a name and a value greater than zero.");
+  if (!["percent", "fixed"].includes(str(form, "discount_type")) || !["product", "subscription"].includes(scope)) flash(back, "err", "Choose a valid discount type and scope.");
+  if (str(form, "discount_type") === "percent" && value > 100) flash(back, "err", "A percentage can't exceed 100.");
+  if (scope === "product" && !productIds.length) flash(back, "err", "Pick at least one product.");
+  validateDates(form, back);
+  validateNumbers(form, back, ["min_purchase", "min_quantity"]);
+  const limit = optNum(form, "usage_limit");
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1)) flash(back, "err", "Usage limit must be a positive whole number.");
+  const { error } = await supabase.rpc("save_catalog_discount", {
+    p_id: id,
+    p_values: {
+      name: str(form, "name"), code: optStr(form, "code")?.toUpperCase() ?? null,
+      discount_type: str(form, "discount_type"), value, scope,
+      min_purchase: num(form, "min_purchase"), min_quantity: num(form, "min_quantity"),
+      start_date: optStr(form, "start_date"), end_date: optStr(form, "end_date"),
+      usage_limit: limit, active: id ? bool(form, "active") : true,
+    },
+    p_product_ids: scope === "product" ? productIds : [],
+  });
+  if (error) flash(back, "err", error.code === "23505" ? "That discount code is already used." : error.message);
+  revalidatePath("/discounts", "layout");
+  flash("/discounts", "ok", "Discount saved.");
 }
 
 export async function toggleDiscount(id: string, active: boolean) {
   await requireRole("admin");
   const supabase = await createClient();
-  await supabase.from("discounts").update({ active }).eq("id", id);
+  const { error } = await supabase.from("discounts").update({ active }).eq("id", id).select("id").single();
+  if (error) flash("/discounts", "err", error.message);
   revalidatePath("/discounts");
+  flash("/discounts", "ok", "Discount status updated.");
 }
 
 // ───────── quotation templates (staff) ─────────
@@ -191,4 +207,16 @@ export async function removeTemplateLine(templateId: string, lineId: string) {
   const supabase = await createClient();
   await supabase.from("quotation_template_lines").delete().eq("id", lineId);
   revalidatePath(`/templates/${templateId}`);
+}
+
+export async function updateVariant(productId: string, variantId: string, form: FormData) {
+  await requireRole("admin");
+  const back = `/products/${productId}`;
+  const extra = Number(str(form, "extra_price"));
+  if (!str(form, "attribute") || !str(form, "value") || !Number.isFinite(extra)) flash(back, "err", "Enter an attribute, value and valid extra price.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("product_variants").update({ attribute: str(form, "attribute"), value: str(form, "value"), extra_price: extra }).eq("id", variantId).eq("product_id", productId).select("id").single();
+  if (error) flash(back, "err", error.message);
+  revalidatePath(back);
+  flash(back, "ok", "Variant saved.");
 }

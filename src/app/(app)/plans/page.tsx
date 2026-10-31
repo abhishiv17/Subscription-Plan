@@ -8,7 +8,8 @@ import { fmtDate, fmtMoney } from "@/lib/format";
 export default async function PlansPage({ searchParams }: { searchParams: SearchParams }) {
   const profile = await getProfile();
   const supabase = await createClient();
-  const { data: plans } = await supabase.from("plans").select("*").order("name");
+  const { data: plans, error } = await supabase.from("plans").select("*").order("name");
+  if (error) throw new Error(error.message);
   const rules = (p: Record<string, boolean>) =>
     [p.auto_close && "auto-close", p.closable && "close early", p.pausable && "pause", p.renewable && "renew"].filter(Boolean).join(" · ") || "—";
 

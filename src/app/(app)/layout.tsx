@@ -13,10 +13,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/templates", label: "Quotation templates" },
     { href: "/products", label: "Products" },
     { href: "/plans", label: "Plans" },
+    { href: "/taxes", label: "Taxes" },
+    { href: "/discounts", label: "Discounts" },
     ...(profile.role === "admin"
       ? [
-          { href: "/taxes", label: "Taxes" },
-          { href: "/discounts", label: "Discounts" },
           { href: "/users", label: "Users" },
         ]
       : []),

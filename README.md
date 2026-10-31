@@ -22,7 +22,7 @@ The database schema lives in `supabase/migrations/`. Demo data (2,000 customers,
 | Launching a plan | `/products`, `/plans` | Products have a type, a sales price and a cost price, plus variants with an extra price (e.g. Brand: Odoo **+560**). Plans have a price, a billing period (daily, weekly, monthly or yearly), a minimum quantity and availability dates. Each plan sets its own rules for auto-close, closing early, pausing and renewing. |
 | Quote to subscription | `/templates`, `/subscriptions` | Quotation templates prefill the plan, lines and payment terms, and set the quote's validity in days. Subscriptions are numbered `SUB-00001`. The lifecycle **Draft → Quotation → Confirmed → Active → Closed** is enforced by a database trigger, which also checks plan minimums, availability and quote expiry. |
 | Billing day | Dashboard → **Run billing**, or *Create invoice now* on a subscription | `_run_billing()` invoices every due period, catching up any it missed, in one transaction. A **unique index on (subscription, period)** makes double billing impossible. Taxes and discounts are calculated automatically. Invoices go **Draft → Confirmed → Paid** and can be confirmed, cancelled, sent or printed. |
-| Discounts | `/discounts` (admin only) | Fixed or percentage, with a minimum purchase or quantity, start and end dates and a usage limit. They apply to specific products or to a whole subscription, appear on the next invoice automatically, and stop once expired or used up. |
+| Discounts | `/discounts` (staff read-only, admin edits) | Fixed or percentage, with a minimum purchase or quantity, start and end dates and a usage limit. They apply to specific products or to a whole subscription, appear on the next invoice automatically, and stop once expired or used up. |
 | Payments | Invoice page, `/payments` | Each payment records its method, amount, date and a note. Partial payments are allowed. A trigger keeps `amount_paid` in sync and marks the invoice Paid. Outstanding and overdue filters are available. |
 | Finance lead | `/dashboard` | Active subscriptions, MRR, revenue collected, amount invoiced, outstanding and overdue, with date filters and a 12-month revenue chart. Totals come from SQL aggregates (`dashboard_summary`). Lists are paginated and indexed, so pages respond well under 2 s with thousands of rows. |
 | Customer portal | `/portal` | Customers see only their own subscriptions and invoices (RLS). They can pause, resume, renew or cancel where the plan allows, and pay invoices. |
@@ -36,3 +36,11 @@ The database schema lives in `supabase/migrations/`. Demo data (2,000 customers,
 5. **Record a payment** (partial, then the rest) and watch the invoice turn Paid.
 6. Show the **dashboard**: revenue, outstanding, overdue, then the overdue invoices list.
 7. Show the **portal**: the customer pauses a subscription and pays an invoice.
+
+## Phase 1 database update
+
+Before using the discount forms, apply `supabase/migrations/0003_catalog_discount.sql`
+in the Supabase SQL editor, or run `supabase db push` against your linked project.
+This adds the admin-only `save_catalog_discount` RPC so a discount and its product
+selections save in one transaction. Existing discounts and usage counts are preserved.
+No reseed is needed.
